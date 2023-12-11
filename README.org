@@ -1,0 +1,256 @@
+#+title: IE53500: Final Project, Implementing the Simplex Method
+
+* Introduction
+$\int_{i=1}^{\inft} \frac{x^2}{2} dx$
+
+* Simplex Method
+
+#+begin_src julia :results value :exports both
+using LinearAlgebra
+
+#input="min 3x1+2x2+4x3
+#x1-x2<=4
+#x1+x2>=7
+#x3=5
+#x1>=0
+#x2>=0
+#x3>=0"
+
+# Initialize:
+o_coeff=Rational.([1,3,0,0,0])
+mat=Rational.([1 -2 1 0 0 ; -2 1 0 1 0 ; 5 3 0 0 1 ])
+rhs=Rational.([0,4,15])
+#cb=[3,4,5]
+#z=(o_coeff[cb])'*mat
+#c_z=o_coeff-z'
+
+simplex(o_coeff,mat,rhs)
+
+# simplex::
+# This runs both phases of the simplex method using the objective coefficients,
+# polyhedral set matrix, and right hand side to construct the tableau later in the process.
+# Note, we're storing results as successful or failure in each phase to make life easier
+# in this simplex function as the booleans are already computed in the phase 1 and 2 stages for feasibility.
+function simplex(o_coeff,mat,rhs)
+# First run phase 1; if it returns true then proceed to phase 2:
+# otherwise, we're done.
+    res=phase1(mat)
+    if(res[1])
+        println(res[3])
+        # Phase 2 handles recession directions if needed, and returns an
+        # error if it occurs.
+        res2=phase2(o_coeff,mat,cb,rhs,z,c_z)
+        res2[1] ? res3=res2[2] : res3="Problem is infeasible:"*res2[3]*"."
+    else
+        res3="Problem is infeasible: "*res[3]*"."
+    end
+    return res3
+end
+
+# pivot:: Matrix{Rational} => a -> a | a::Matrix{Rational}
+# This finds the pivot based on Bland's rule: namely,
+# find the maximum value in r_0, then the minimum positive ratio of the right hand side with the values in
+# the pivot column to select the pivot index. If there are ties, pick the first.
+function find_pivot(mat)
+    pcol=findall(x->x>0,mat[1,1:end-1])
+    if(pcol==nothing)
+        println("init pcol is nothing");
+        return false
+    end
+    for i in pcol
+        ratio=mat[2:end,end]./mat[2:end,i]
+        if all(ratio .<= 0)
+           filter!(!=(i),pcol)
+        end
+    end
+    if(pcol==Int64[])
+        println("pcol is empty")
+        return false
+    end
+    pcol=pcol[findmax(mat[1,pcol])[2]]
+    ratio=mat[2:end,end]./mat[2:end,pcol]
+    #need to check if max only has negative ratios; if so, move to the second max
+    # Note the plus 1 below is to deal with the fact that we don't want to compute the ratio on the first
+    # row, we we have to exclude that from the matrix, but that also decreases our row indices by 1
+    # which we need to compensate for.
+    #if all(ratio .< 0)
+    prow=(findfirst(x->x==findmin(ratio[findall(x->x>0,ratio)])[1],ratio))+1
+    # Julia allows me to return a vector and assign to two separate variables, which I leverage
+    # here when this function is called in the pivot function.
+    return ([prow,pcol])
+end
+
+# feasibility_check:: [Matrix{Rational}] => b | a::Matrix{Rational}, b::Boolean
+function feasibility_check(mat)
+    # xi is the index of the first column that has a positive reduced cost,
+    # but entirely negative entires elsewhere, excluding the right-hand-side column.
+    # This indicates an unbounded problem.
+    xi=findfirst(x-> x[1]>0 && all(x[2:end].<0), eachcol(mat[1:end,1:end-1]))
+    # If we can't find a column that indicates an infeasible problem,
+    # we also check to see if we can find a valid pivot: namely, with positive
+    # reduced cost and positive ratio. If not, we're also infeasible.
+    if(xi != nothing || find_pivot(mat)==false)
+        # If the problem is infeasible, we construct our basic feasible solution and recession direction.
+        # The basic-feasible-indices are computed by matching to the identity matrix
+        # the solution is then constructed by extracting the right hand side from the tableau for the
+        # variable, and the recession direction is constructed by negating the all negative column
+        # and making everything else 0, except the element that corresponds to the all negative column
+        # which becomes a 1.
+        bfi=map(x->findfirst(y->y==I(size(mat,1)-1)[:,x],eachcol(mat[2:end,1:end-1])),1:size(mat,1)-1)
+        bfs=map(x-> in(x, bfi) ? mat[2:end,:][findfirst(y->y==x,bfi),end] : 0, 1:size(mat,2)-1)
+        rd=map(x-> in(x, bfi) ? -1 .* mat[2:end,xi][findfirst(y->y==x,bfi),end] : 0, 1:length(bfs))
+        rd[xi]=1
+        println("Problem is infeasible, the recession direction in lexicographic variable order (e.g. x1->xn) is")
+        print(string(bfs)*" +x_"*string(xi)*"*"*string(rd))
+        return(false)
+    end
+    # If we can't find a positive reduced cost with negative column or invalid pivot, we are still feasible.
+    return(true)
+end
+
+# pivot:: [Matrix{Rational},Vector{Vector{Int}}] => [a,b] -> [a,b] | a::Matrix{Rational}, b::Vector{Vector{Int}}
+# First this function uses the find_pivot function to find our pivot index by one of the non-looping rules,
+# then uses pivots the matrix, returning the modified matrix with the new basis.
+function pivot(mat)
+    # While any of the reduced costs (not including the right hand side) are greater than 0, keep
+    # pivoting.
+    mat=Rational.(mat)
+    while (any(mat[1,1:end-1].>0) && feasibility_check(mat))
+        prow,pcol=find_pivot(mat)
+        println("Our pivot index for this is row "*string(prow)*" and column "*string(pcol)*".")
+        # Go ahead and normalize our pivot row by the pivot index, it makes it easier to compute the
+        # the scalar needed for the elementary row operations in the upcoming loop also assign it
+        # to a variable to save on indexing operations.
+        mat[prow,:]=mat[prow,:]./mat[prow,pcol]
+        # Assign to placeholder for cleaner code below
+        row=mat[prow,:]
+        # Placeholder for pivoted matrix
+        sol=[]
+        # Iterate over each row, do elementary row operations if we're not on the already re-scaled pivot row.
+        # Add all results to the solutions vector.
+        for i in collect(eachrow(mat))
+            if i == row
+                push!(sol, row)
+            else
+                scalar=i[pcol]
+                push!(sol, ((i[pcol]>0 && scalar>0) || (i[pcol]<0 && scalar<0)) ? i-row*scalar : i+row*scalar)
+            end
+        end
+        # Reconstruct the matrix from the solutions vector via hcat and transposing (vectors in julia
+        # are column vectors by default, hence the need to transpose).
+        mat=Matrix(reduce(hcat,sol)')
+        # Pretty print the intermediate matrices after each pivot.
+        display(mat)
+    end
+    # Once we're done pivoting, return the result.
+    return(mat)
+end
+
+# add_artificial_variables:: Matrix{Rational} => a -> a | a::Matrix{Rational}
+# Create an identity matrix, and append it to the matrix rows to force
+# full row rank, and a basis for phase 1 of the method. Note, we're just
+# adding artificial variables indiscriminately, not considering any
+# potential bases in the original problem. This helps detect redundant
+# constraints.
+function add_artificial_vars(mat)
+    return(hcat(mat,I(size(mat,1))))
+end
+
+# phase1 :: Matrix{Rational} => a -> [a,b,s] | a::Matrix{Rational}, b::Boolean, s:Message
+# Phase one of the two-phase simplex:
+function phase1(mat)
+    # First add as many artificial variables as needed (the number of rows in A to guarantee full row rank), and note how many.
+    num_art=size(mat,1)
+    m2=add_artificial_vars(mat)
+
+    # Next, get the indices of these artificial variables that will act as a basis,
+    # and the non-basis variables.
+    b_ind=(1:size(m2,2))[end-2:end]
+    n_ind=(1:size(m2,2))[1:end-3]
+
+    # Compute the objective function row for the matrix based on the new problem,
+    # namely, minimizing the sum of the artificial variables
+    #z=hcat(ones(num_art)'*I(num_art)*m2[:,n_ind],zeros(num_art)')
+    z=Matrix(vcat(zeros(n_ind[end]),zeros(b_ind[end]) .- 1,0)')+sum(m2,dim=1)
+    rhs=[]
+    m2=vcat(z,m2)
+    m2=hcat(m2,rhs)
+    cb=[b_ind]
+
+    # The pivot function has checks for termination and is a fixed point function
+    # when the result of the last iteration is the same is the current iteration,
+    # we know we're done pivoting.
+    m2=pivot(m2)
+
+    # Since we know all our reduced costs are negative, we have an optimal tableau,
+    # from here, we need to determine if the right hand side is 0. If not,
+    # phase 1 has concluded, and the original problem is infeasible.
+    if(m2[1,end]==0)
+        return(true,m2,"Problem is feasible, proceeding to phase 2.")
+    else
+        return(false,m2,"all reduced costs are negative and the sum of artificial variables is nonzero.")
+    end
+end
+
+function phase2()
+
+end
+
+# For consideration of bonus points: an a problem translator to my simplex implementation.
+function parse_problem(problem::String)
+    conv(y)=map(x->parse(Int64,x[1][1]),y)
+    num_vars=maximum(conv(getfield.(collect(eachmatch(r"x(.?)", input)),[:captures])))
+    v=split(problem,"\n")
+
+    count=0
+
+    for i in v
+        if(match(r"(>=|<=)", i)==nothing)
+            break
+        elseif (match(r"(>=|<=)", i).match=="<=")
+
+        elseif (match(r"(>=|<=)", i).match==">=")
+
+        end
+    end
+
+
+end
+
+# Comparison with commercial solvers:
+using GLPK, JuMP, Test
+
+function flexjp(T,D,b,a,sk,o,pk,num_shifts,ct,h,r,shifts)
+    model=Model(HiGHS.Optimizer)
+    set_optimizer_attribute(model, "presolve", "off")
+
+    @variable(model, x[1:size(a,1),1:size(a,2)], Bin);
+    @variable(model, y[1:num_shifts], Bin);
+    @constraint(model,  (b*x*ones(T*D)) .>= (sk.*pk));
+    @constraint(model, x .<= a);
+    @constraint(model, x*ones(T*D) .<= 1);
+    @constraint(model, (shifts*y) .<= 1);
+    @constraint(model, o.*(shifts*y) .>= x'*ones(size(a,1)) );
+
+    @objective(model, Max, r*sum(x)-ct/h*sum((shifts*y)));
+    optimize!(model)
+    if(raw_status(model) == "kInfeasible")
+        return ["Flexjp","Inf", 0, solve_time(model)]
+    else
+        return ["Flexjp",objective_value(model), relative_gap(model), solve_time(model)]
+    end
+end
+
+#+end_src
+
+* Interior Point Method
+
+* Application to the Problem
+
+* Performance Evaluation
+
+* Unit Testing and Correctness Proofs
+
+* References
+
+* Appendix
