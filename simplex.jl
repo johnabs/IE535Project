@@ -22,7 +22,7 @@ function simplex(A,b,c,type)
         # error if it occurs, so this is phase2.
         mat=p1_to_p2(mat,old_c,a_inds,type)
         printstyled("Beginning pivoting for Phase 2:\n",color=:blue)
-        res2=pivot(mat,[2])
+        res2=pivot(mat)
     else
         printstyled(res[2]*".\n",color=:red,bold=true)
         return nothing
@@ -40,7 +40,7 @@ function simplex(A,b,c,type)
         printstyled("and the optimal objective value is ",color=:green)
         printstyled(string(obj'*optimal_bfs),color=:cyan);
         print(".\n")
-        return(res2,optimal_bfs,res2[1,end])
+        return(res2,optimal_bfs,obj'*optimal_bfs)
     # Otherwise, we print the error message, and return nothing.
     elseif res2!=nothing
         printstyled(res2*".\n",color=:red,bold=true)
@@ -51,19 +51,26 @@ end
 
 # This function takes us from the phase 1 tableau to the phase 2 tableau.
 function p1_to_p2(m1,c,a_inds,type)
-
         temp=find_basis_indices(m1)
+        println(temp)
+        println(a_inds)
         # Check if any artifical variables are in the basis
         if(any(a_inds .∈ [temp,] ))
+            println("ARTIFICIALS IN THE BASIS!!!")
         # If not, just delete them and adjust the tableau accordingly:
         else
             #display(m1)
             kinds= (1:size(m1,2))[(1:size(m1,2) .∉ [a_inds,])]
+            println("KINDS")
             #display(m1[:,kinds])
             mat=m1[:,kinds]
+            println("MAT")
             printstyled("Removed artificial varibles:\n",color=:blue,blink=false)
+            display(mat)
             mat[1,1:end-1]=(-1 .* c)
+            println("MAT2")
             mat[1,end]=0
+            println("ZEROED")
             printstyled("Adjusted reduced cost row:\n",color=:blue,blink=false)
             display(mat)
 
@@ -87,16 +94,16 @@ end
 
 # Find the smallest value strictly greater than 0 and less than infinity.
 function pos_min(x)
-    if(length(filter(x->x>0 && x!=Inf,x))==0)
-        return false
+    if(length(filter(x->x>=0 && x!=Inf,x))==0)
+        return nothing
         else
-        return minimum(filter(x->x>0 && x!=Inf,x))
+        return minimum(filter(x->x>=0 && x!=Inf,x))
     end
 end
 
 # Find the ties of any positive minima.
 function tie_min(y)
-    if(pos_min(y)==false)
+    if(pos_min(y)==nothing)
         return false
     else
        return findall(x->x==pos_min(y),y)
@@ -106,6 +113,15 @@ end
 # Find any matches in the ratio test where integer division would fail:
 # namely 0//0 (0/0 in Floating point arithmetic is handled as NaN, but fails
 # with integer division so I have to handle it separately).
+function match_zeros(z,y)
+     if any(findall(x->x==0,z).∈ [findall(x->x==0,y),])
+         return z.==0 .&& y.==z
+    else
+         return false
+    end
+end
+
+#Deal with all funky zeros and NaNs
 function match_zeros(z,y)
      if any(findall(x->x==0,z).∈ [findall(x->x==0,y),])
          return z.==0 .&& y.==z
@@ -131,51 +147,18 @@ function find_pivot(mat)
         rinds=(2:size(mat,1))[.!(temp)]
         ratio=zeros(size(mat,1)-1)
         ratio[rinds.-1]=mat[rinds,end]./mat[rinds,pcol]
-        ratio[finds.-1].=0
+        ratio[finds.-1].=Inf
+        ratio[findall(x->x<0,mat[2:end,pcol])].=Inf
     else
         # If there are no 0//0 errors, just compute ratios normally
         rinds=2:size(mat,1)
         ratio=mat[rinds,end]./mat[rinds,pcol]
+        ratio[findall(x->x<0,mat[2:end,pcol])].=Inf
     end
     # Find the first index of the minimum ratios including ties.
     prow=tie_min(ratio)[1]+1
     # Julia allows me to return a vector and assign to two separate variables, which I leverage
     # here when this function is called in the pivot function.
-    return ([prow,pcol])
-end
-
-# I came across an where using bland's rule in phase 1 was failing; so this is to fix that:
-# it forces the artificial variables out first if possible, then proceeds as normal with bland's rule.
-function find_pivot_artificial(mat,a_inds)
-    #println("Finding Pivot")
-    #pcol=findfirst(x->mat[1,x]>0 && any(mat[x,a_inds]!=0 .&& mat[end,a_inds]!=0),1:size(mat,2)-1)
-    return(find_pivot(mat))
-    bind=find_basis_indices(mat)
-    prow=(2:size(mat,1))[a_inds[findfirst(x->x in bind,a_inds)] .== bind][1]
-    #println("Found row")
-    #println(prow)
-    if(prow==nothing)
-        return find_pivot(mat)
-    else
-        if(mat[prow,end]!=0//1)
-            #println("No integer issues")
-            ratio=mat[prow,1:end-1]./mat[prow,end]
-            pcol=tie_min(ratio)[1]
-        else
-            #println("Possible integer issues")
-            c1=mat[1,:] .== mat[prow,:]
-            #println(c1)
-            c2=mat[1,:] .!= 0
-            #println(c2)
-            pcol=findfirst(x->x==true, c1 .&& c2)
-            if(pcol==nothing)
-                return find_pivot(mat)
-            end
-        end
-    end
-
-    #println("PIVOT FOUND")
-    #println([prow,pcol])
     return ([prow,pcol])
 end
 
@@ -207,35 +190,36 @@ function feasibility_check(mat)
         # and making everything else 0, except the element that corresponds to the all negative column
         # which becomes a 1.
         bfi=map(x->findfirst(y->y==I(size(mat,1)-1)[:,x],eachcol(mat[2:end,1:end-1])),1:size(mat,1)-1)
-        bfs=map(x-> in(x, bfi) ? mat[2:end,:][findfirst(y->y==x,bfi),end] : 0, 1:size(mat,2)-1)
-        rd=map(x-> in(x, bfi) ? -1 .* mat[2:end,xi][findfirst(y->y==x,bfi),end] : 0, 1:length(bfs))
-        rd[xi]=1
-        err_msg="Problem is unbounded, the recession direction in lexicographic variable order (e.g. x1->xn) is \n"* string(bfs)*" +x_"*string(xi)*"*"*string(rd)
+        bfs=map(x-> in(x, bfi) ? mat[2:end,:][findfirst(y->y==x,bfi),end] : 0//1, 1:size(mat,2)-1)
+        rd=map(x-> in(x, bfi) ? -1 .* mat[2:end,xi][findfirst(y->y==x,bfi),end] : 0//1, 1:length(bfs))
+        rd[xi]=1//1
+        err_msg="Problem is unbounded, the recession direction in order (i.e. x1->xn) is \n"* string(bfs)*" +x_"*string(xi)*"*"*string(rd)
         return([false,err_msg])
     end
     # If we can't find a positive reduced cost with negative column or invalid pivot, we are still feasible.
     return([true,nothing])
 end
 
+
 # pivot:: [Matrix{Rational},Vector{Vector{Int}}] => [a,b] -> [a,b] | a::Matrix{Rational}, b::Vector{Vector{Int}}
 # First this function uses the find_pivot function to find our pivot index by one of the non-looping rules,
 # then uses pivots the matrix, returning the modified matrix with the new basis.
-function pivot(mat,phase)
+function pivot(mat)
     # While any of the reduced costs (not including the right hand side) are greater than 0, keep
     # pivoting.
     mat=Rational.(mat)
     count=0
     while (any(mat[1,1:end-1].>0) && feasibility_check(mat)[1])
-        if(phase[1]==1)
-            if(any(phase[2] .∈ [find_basis_indices(mat),]) && count<length(phase[2]))
-                prow,pcol=find_pivot_artificial(mat,phase[2])
-                count=count+1
-            else
-                prow,pcol=find_pivot(mat)
-            end
-        else
-            prow,pcol=find_pivot(mat)
-        end
+        #if(phase[1]==1)
+        #    if(any(phase[2] .∈ [find_basis_indices(mat),]) && count<length(phase[2]))
+        #        prow,pcol=find_pivot_artificial(mat,phase[2])
+        #        count=count+1
+        #    else
+        #        prow,pcol=find_pivot(mat)
+        #    end
+        #else
+        prow,pcol=find_pivot(mat)
+        #end
         #if(ind!=[])
         #    prow,pcol=ind
         #end
@@ -265,8 +249,8 @@ function pivot(mat,phase)
         # are column vectors by default, hence the need to transpose).
         mat=Matrix(reduce(hcat,sol)')
         # Pretty print the intermediate matrices after each pivot.
-        display(mat)
     end
+    display(mat)
     # Once we're done pivoting, return the result.
     temp=feasibility_check(mat)
     if(temp[1])
@@ -309,7 +293,7 @@ end
 
 # phase1 :: Matrix{Rational} => a -> [a,b,s] | a::Matrix{Rational}, b::Boolean, s:Message
 # Phase one of the two-phase simplex:
-function phase1(A,b,c)
+function phase1(A,b,c;debug=false)
     # First add as many artificial variables as needed (the number of rows in A to guarantee full row rank), and note how many.
     printstyled("Beginning Phase 1:\n",color=:blue)
     if(any(b.< 0))
@@ -322,32 +306,29 @@ function phase1(A,b,c)
     m2,a_inds=add_artificial_vars(mat);
     printstyled("Tableau with added artificial variables and constraints created:\n",color=:blue)
     display(m2)
+    println(a_inds)
 
-    #if(length(a_inds)>0)
-    #    c=vcat(c,zeros(length(a_inds)))
-    #end
+    #
     old_c=Rational.(c)
     c=Rational.(zeros(size(m2,2)))
-    println("Test1")
-    println(a_inds)
+    #println("Test1")
+    #println(a_inds)
     c[a_inds].=1//1
 
 
     # Next, get the indices of these artificial variables that will act as a basis,
     # and the non-basis variables.
-    #b_ind=find_basis_indices_start(m2)
-    #n_ind=findall(x->x∉b_ind,1:size(m2,2)-1)
-    println("Test2")
+    #println("Test2")
     r0=Rational.(zeros(size(m2,2)))'
-    display(r0)
+    #display(r0)
     r0[a_inds].=-1
-    display(r0)
+    #display(r0)
     rinds=map(x->findfirst(y->y==1,m2[:,x]),a_inds)
-    display(rinds)
-    display(m2[rinds,:])
-    display(sum(m2[rinds,:],dims=1))
+    #display(rinds)
+    #display(m2[rinds,:])
+    #display(sum(m2[rinds,:],dims=1))
     r0=r0.+sum(m2[rinds,:],dims=1)
-    display(r0)
+    #display(r0)
     #r0[n_ind]=Rational.(c[b_ind]'*m2[:,n_ind]-c[n_ind]')
     #r0[end]=c[b_ind]'*b
     m2=vcat(r0,m2)
@@ -368,7 +349,10 @@ function phase1(A,b,c)
     # when the result of the last iteration is the same is the current iteration,
     # we know we're done pivoting.
     printstyled("Beginning Phase 1 pivoting:\n",color=:blue)
-    res=pivot(m2,[1,a_inds])
+    res=pivot(m2)
+    if(debug)
+        return res
+    end
 
     # Check if we have a recession direction here.
     if(typeof(res)==String)
@@ -406,26 +390,6 @@ function phase1(A,b,c)
     end
 end
 
-# For consideration of bonus points: an a problem translator to my simplex implementation.
-function parse_problem(problem::String)
-    conv(y)=map(x->parse(Int64,x[1][1]),y)
-    num_vars=maximum(conv(getfield.(collect(eachmatch(r"x(.?)", input)),[:captures])))
-    v=split(problem,"\n")
-
-    count=0
-
-    for i in v
-        if(match(r"(>=|<=)", i)==nothing)
-            break
-        elseif (match(r"(>=|<=)", i).match=="<=")
-
-        elseif (match(r"(>=|<=)", i).match==">=")
-
-        end
-    end
-
-
-end
 
 
 # Book Comparison Examples:
@@ -434,7 +398,7 @@ using HiGHS, JuMP, Test, LinearAlgebra, DataStructures
 # Problem 3.28
 A=[2 -3 -1 1 1 0 0 ; -1 2 2 -3 0 1 0 ; -1 1 -4 1 0 0 1]
 b=[0,1,8]
-c=-1 .* [3,-2,1,-1,0,0,0]
+c=[-3,2,-1,1,0,0,0]
 simplex(A,b,c,"max")
 # Result: recession direction exists and identified.
 
@@ -471,7 +435,7 @@ simplex(A,b,c,"min")
 A=[1 1 -1 0 0; -1 1 0 -1 0 ; 0 1 0 0 1]
 b=[2,1,3]
 c=[1,-2,0,0,0]
-simplex(A,b,c,"min")
+simplex(A,b,c,"min");
 # Correctly solves with optimal objective value of -6
 #
 # Example 4.7, page 170.
@@ -479,8 +443,7 @@ A=[1 1 2 1 0 0 ; -1 0 1 0 -1 0 ; 0 0 1 0 0 -1]
 b=[4,4,3]
 c=[-1,-3,1,0,0,0]
 simplex(A,b,c,"min")
-# Correctly identifies redundant constraint and remove it, proceeds to solve
-# with optimal objective value of -4
+# Correctly identifies as infeasible.
 
 # Comparison with commercial solvers:
 
@@ -506,30 +469,17 @@ if(raw_status(model) == "kHighsModelStatusOptimal")
     # note mine should be correct as I'm using rational arithemetic, with
     # unlimited precision, not floating point values.
     if(isapprox(res[3],objective_value(model),rtol=0.0001))
-        printstyled("Models are sufficiently close!\n",color=:green)
+        printstyled("Success: Models are sufficiently close!\n",color=:green)
     else
-        printstyled("Models are NOT sufficiently close!\n",color=:red)
+        printstyled("Failure: Models are NOT sufficiently close!\n",color=:red)
     end
 elseif(res==nothing)
-        printstyled("Both show unboundedness!",color=:green)
+        printstyled("Success: Both show unboundedness!",color=:green)
 else
-        printstyled("Mine algorithm disagrees with HiGHS.)",color=:red)
+        printstyled("Failure: My algorithm disagrees with HiGHS.)",color=:red)
 end
 
 #Initialize Model 16
-#A=
-# [1 0 0 1 0 0 1 0 0 1 0 0 0 0 0 0 0 0;
-#   0 1 0 0 1 0 0 1 0 0 1 0 0 0 0 0 0 0;
-#   0 0 1 0 0 1 0 0 1 0 0 1 0 0 0 0 0 0;
-#   20 0 0 15 0 0 12 0 0 0 0 0 1 0 0 0 0 0;
-#   0 20 0 0 15 0 0 12 0 0 0 0 0 1 0 0 0 0;
-#   0 0 20 0 0 15 0 0 12 0 0 0 0 0 1 0 0 0;
-#   1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0;
-#   0 0 0 1 1 1 0 0 0 0 0 0 0 0 0 0 1 0;
-#   0 0 0 0 0 0 1 1 1 0 0 0 0 0 0 0 0 1;
-#   1/750 -1/900 0 1/750 -1/900 0 1/750 -1/900 0 0 0 0 0 0 0 0 0 0;
-#   1/750 0 -1/450 1/750 0 -1/450 1/750 0 -1/450  0 0 0 0 0 0 0 0 0]
-
 A=vcat(Rational.(
  [1 0 0 1 0 0 1 0 0 1 0 0 0 0 0 0 0 0;
    0 1 0 0 1 0 0 1 0 0 1 0 0 0 0 0 0 0;
@@ -545,7 +495,6 @@ A=vcat(Rational.(
 b=[750,900,450,13000,12000,5000,900,1200,750,0,0]
 c=vcat([385,385,385,330,330,300,275,275,275],zeros(9))
 model=Model(HiGHS.Optimizer)
-model=Model(GLPK.Optimizer)
 set_optimizer_attribute(model, "presolve", "off")
 # Define decision variables
 @variable(model, x[1:18]);
@@ -563,14 +512,14 @@ if(raw_status(model) == "kHighsModelStatusOptimal")
     # note mine should be correct as I'm using rational arithemetic, with
     # unlimited precision, not floating point values.
     if(isapprox(res[3],objective_value(model),rtol=0.0001))
-        printstyled("Models are sufficiently close!\n",color=:green)
+        printstyled("Success: Models are sufficiently close!\n",color=:green)
     else
-        printstyled("Models are NOT sufficiently close!\n",color=:red)
+        printstyled("Failure: Models are NOT sufficiently close!\n",color=:red)
     end
 elseif(res==nothing)
-        printstyled("Both show unboundedness!",color=:green)
+        printstyled("Success: Both models indicate unboundedness or infeasibility!",color=:green)
 else
-        printstyled("My algorithm disagrees with HiGHS.)",color=:red)
+        printstyled("Failure: mine doesn't agree with HiGHS.",color=:red)
 end
 
 
@@ -578,9 +527,7 @@ end
 #Initialize Model 23
 model=Model(HiGHS.Optimizer)
 set_optimizer_attribute(model, "presolve", "off")
-# Define decision variables
 @variable(model, x[1:14]);
-# Add constraints
 @constraint(model, ([9,6,8.5,12,3.5,16,16,26,24,41,34,45,0,0]./100)' *x >= 0.2);
 @constraint(model, ([0.5,3,4,4.5,0,4,4,8.5,2,1.5,1,0.5,0,0]./100)' *x >= 0.03);
 @constraint(model, ([20,16,2.5,12,0,8,10.5,9,8,13,8,6.5,0,0]./100)' *x <= 0.12);
@@ -595,95 +542,32 @@ set_optimizer_attribute(model, "presolve", "off")
 @constraint(model, 0.10 <= x[6]+x[7]<= 0.30);
 @constraint(model, 0.02 <= x[8]+x[9]<= 0.25);
 @constraint(model, 0.03 <= x[10]+x[11]+x[12]<= 0.35);
-
-
 @objective(model, Min, [64,35,55,54,19,64,62,77,66,74,85,108,10,66]'*x);
 # Optimize the model
 optimize!(model)
-simplex(mat)
-# Check feasibility, compare with my model
-if(raw_status(model) == "kInfeasible")
-    return ["Flexjp","Inf", 0, solve_time(model)]
+# I put my model into some external code to help formulate the matrices
+# due to a series of typos making my life miserable since this matrix is so huge.
+# BUT IT DOES WORK. The matrix of interest is in the test2.csv file, which contains
+# A and b.
+c=vcat(Rational.([64,35,55,54,19,64,62,77,66,74,85,108,10,66]),Rational.(zeros(60-14)))
+A=readdlm("test2.csv", ',', String)
+A=Meta.parse.(A)
+A=eval.(A)
+A=Rational.(A)
+b=A[:,end]
+A=A[:,1:end-1]
+res=simplex(A,b,c,"min");
+if(raw_status(model) == "kHighsModelStatusOptimal")
+    # Check if my model is sufficiently close to the HiGHS optimizer
+    # note mine should be correct as I'm using rational arithemetic, with
+    # unlimited precision, not floating point values.
+    if(isapprox(res[3],objective_value(model),rtol=0.0001))
+        printstyled("Success: Models are sufficiently close!\n",color=:green)
+    else
+        printstyled("Failure: Models are NOT sufficiently close!\n",color=:red)
+    end
+elseif(res==nothing)
+        printstyled("Success: Both models indicate unboundedness or infeasibility!",color=:green)
 else
-    return ["Flexjp",objective_value(model), solve_time(model)]
+        printstyled("Failure: mine doesn't agree with HiGHS.",color=:red)
 end
-
-@constraint(model, ([9,6,8.5,12,3.5,16,16,26,24,41,34,45,0,0]./100)' *x >= 0.2);
-@constraint(model, ([0.5,3,4,4.5,0,4,4,8.5,2,1.5,1,0.5,0,0]./100)' *x >= 0.03);
-@constraint(model, ([20,16,2.5,12,0,8,10.5,9,8,13,8,6.5,0,0]./100)' *x <= 0.12);
-@constraint(model, 0.01 <= ([0.7,2,0.02,0.1,0.6,0.1,0.1,0.15,0.3,0.1,0.35,0.2,36,32]./100)' *x <= 0.02);
-@constraint(model, 0.006 <= ([0.05,0.1,0.25,0.4,0.1,0.9,1.2,0.6,0.65,1.2,0.8,0.6,0.5,14]./100)' *x <= 0.02);
-@constraint(model, ([0.7,2,0.02,0.1,0.6,0.1,0.1,0.15,0.3,0.1,0.35,0.2,36,32]./100 .- [0.05,0.1,0.25,0.4,0.1,0.9,1.2,0.6,0.65,1.2,0.8,0.6,0.5,14]./100)' *x >= 0);
-@constraint(model, x.>= [4,1,1,1,5,5,5,5,1,1,1,1,0,1]./100);
-@constraint(model, x.<= [20,20,25,25,14,30,30,15,25,35,35,35,2,2]./100);
-@constraint(model, sum(x) == 1);
-@constraint(model, 0.05 <= x[1]+x[2]<= 0.20);
-@constraint(model, 0.20 <= x[3]+x[4]<= 0.35);
-@constraint(model, 0.10 <= x[6]+x[7]<= 0.30);
-@constraint(model, 0.02 <= x[8]+x[9]<= 0.25);
-@constraint(model, 0.03 <= x[10]+x[11]+x[12]<= 0.35);
-
-
-slack=vcat(1,zeros(45))
-surplus=vcat(-1,zeros(45))
-temp=([0.7,2,0.02,0.1,0.6,0.1,0.1,0.15,0.3,0.1,0.35,0.2,36,32]./100 .- [0.05,0.1,0.25,0.4,0.1,0.9,1.2,0.6,0.65,1.2,0.8,0.6,0.5,14]./100)
-a2=vcat(1,zeros(13))
-A=vcat(
-        reduce(hcat,[([9,6,8.5,12,3.5,16,16,26,24,41,34,45,0,0]./100)',circshift(surplus,0)']),
-        reduce(hcat,[([0.5,3,4,4.5,0,4,4,8.5,2,1.5,1,0.5,0,0]./100)',circshift(surplus,1)']),
-        reduce(hcat,[([20,16,2.5,12,0,8,10.5,9,8,13,8,6.5,0,0]./100)',circshift(slack,2)']),
-        reduce(hcat,[([0.7,2,0.02,0.1,0.6,0.1,0.1,0.15,0.3,0.1,0.35,0.2,36,32]./100)',circshift(surplus,3)']),
-        reduce(hcat,[([0.7,2,0.02,0.1,0.6,0.1,0.1,0.15,0.3,0.1,0.35,0.2,36,32]./100)',circshift(slack,4)']),
-        reduce(hcat,[([0.05,0.1,0.25,0.4,0.1,0.9,1.2,0.6,0.65,1.2,0.8,0.6,0.5,14]./100)',circshift(surplus,5)']),
-        reduce(hcat,[([0.05,0.1,0.25,0.4,0.1,0.9,1.2,0.6,0.65,1.2,0.8,0.6,0.5,14]./100)',circshift(slack,6)']),
-        reduce(hcat,[temp',circshift(surplus,7)']),
-        reduce(hcat,[circshift(a2,0)',circshift(surplus,8)']),
-        reduce(hcat,[circshift(a2,1)',circshift(surplus,9)']),
-        reduce(hcat,[circshift(a2,2)',circshift(surplus,10)']),
-        reduce(hcat,[circshift(a2,3)',circshift(surplus,11)']),
-        reduce(hcat,[circshift(a2,4)',circshift(surplus,12)']),
-        reduce(hcat,[circshift(a2,5)',circshift(surplus,13)']),
-        reduce(hcat,[circshift(a2,6)',circshift(surplus,14)']),
-        reduce(hcat,[circshift(a2,7)',circshift(surplus,15)']),
-        reduce(hcat,[circshift(a2,8)',circshift(surplus,16)']),
-        reduce(hcat,[circshift(a2,9)',circshift(surplus,17)']),
-        reduce(hcat,[circshift(a2,10)',circshift(surplus,18)']),
-        reduce(hcat,[circshift(a2,11)',circshift(surplus,19)']),
-        reduce(hcat,[circshift(a2,12)',circshift(surplus,20)']),
-        reduce(hcat,[circshift(a2,13)',circshift(surplus,21)']),
-        reduce(hcat,[circshift(a2,0)',circshift(slack,22)']),
-        reduce(hcat,[circshift(a2,1)',circshift(slack,23)']),
-        reduce(hcat,[circshift(a2,2)',circshift(slack,24)']),
-        reduce(hcat,[circshift(a2,3)',circshift(slack,25)']),
-        reduce(hcat,[circshift(a2,4)',circshift(slack,26)']),
-        reduce(hcat,[circshift(a2,5)',circshift(slack,27)']),
-        reduce(hcat,[circshift(a2,6)',circshift(slack,28)']),
-        reduce(hcat,[circshift(a2,7)',circshift(slack,29)']),
-        reduce(hcat,[circshift(a2,8)',circshift(slack,30)']),
-        reduce(hcat,[circshift(a2,9)',circshift(surplus,31)']),
-        reduce(hcat,[circshift(a2,10)',circshift(slack,32)']),
-        reduce(hcat,[circshift(a2,11)',circshift(slack,33)']),
-        reduce(hcat,[circshift(a2,12)',circshift(slack,34)']),
-        reduce(hcat,[circshift(a2,13)',circshift(slack,35)']),
-        reduce(hcat,[[1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0]',circshift(slack,36)']),
-        reduce(hcat,[[1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0]',circshift(surplus,37)']),
-        reduce(hcat,[[0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0]',circshift(slack,38)']),
-        reduce(hcat,[[0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0]',circshift(surplus,39)']),
-        reduce(hcat,[[0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0]',circshift(slack,40)']),
-        reduce(hcat,[[0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0]',circshift(surplus,41)']),
-        reduce(hcat,[[0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0]',circshift(slack,42)']),
-        reduce(hcat,[[0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0]',circshift(surplus,43)']),
-        reduce(hcat,[[0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0]',circshift(slack,42)']),
-        reduce(hcat,[[0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0]',circshift(surplus,43)']),
-        hcat(ones(14)',zeros(46)')
-    )
-
-circshift(slacks,0)
-b1=[0.2,0.03,0.12,0.01,0.02,0.006,0.02,0]
-b2=[4,1,1,1,5,5,5,5,1,1,1,1,0,1]./100;
-b3=[20,20,25,25,14,30,30,15,25,35,35,35,2,2]./100;
-b4=[1]
-b5=[0.05,0.20,0.10,0.02,0.03]
-b6=[0.20,0.35,0.30,0.25,0.35]
-b=reduce(vcat,[b1,b2,b3,b4,b5,b6])
-c=[64,35,55,54,19,64,62,77,66,74,85,108,10,66]
