@@ -1,34 +1,55 @@
-#+title: IE53500: Final Project, Implementing Simplex-Tableau Method
-#+author: John Biechele-Speziale
-#+author: PUID: 0028360423
-#+options: toc:nil
-#+LATEX_HEADER: \usepackage{minted}
-#+LATEX_HEADER: \usepackage{bbm}
-#+LATEX_HEADER: \usepackage{graphicx}
-#+LaTeX_HEADER: \usemintedstyle{autumn}
-#+LATEX_HEADER: \usepackage[margin=1in]{geometry}
+% Created 2023-12-13 Wed 20:35
+% Intended LaTeX compiler: pdflatex
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{longtable}
+\usepackage{wrapfig}
+\usepackage{rotating}
+\usepackage[normalem]{ulem}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{capt-of}
+\usepackage{hyperref}
+\usepackage{minted}
+\usepackage{minted}
+\usepackage{bbm}
+\usepackage{graphicx}
+\usemintedstyle{autumn}
+\usepackage[margin=1in]{geometry}
+\author{John Biechele-Speziale PUID: 0028360423}
+\date{\today}
+\title{IE53500: Final Project, Implementing Simplex-Tableau Method}
+\hypersetup{
+ pdfauthor={John Biechele-Speziale PUID: 0028360423},
+ pdftitle={IE53500: Final Project, Implementing Simplex-Tableau Method},
+ pdfkeywords={},
+ pdfsubject={},
+ pdfcreator={Emacs 28.1 (Org mode 9.6.1)}, 
+ pdflang={English}}
+\begin{document}
 
-#+begin_src elisp :exports none
-;(setq org-latex-pdf-process '("latexmk -f -pdf -%latex -interaction=nonstopmode -shell-escape -output-directory=%o %f"))
-(setq org-latex-listings 'minted
-      org-latex-packages-alist '(("" "minted"))
-      org-latex-pdf-process
-      '("pdflatex -shell-escape -interaction nonstopmode -output-directory %o %f"
-        "pdflatex -shell-escape -interaction nonstopmode -output-directory %o %f"))
-#+end_src
+\maketitle
 
-
-* Introduction
+\section{Introduction}
+\label{sec:orgd00151e}
 Before beginning, I would like to point out the following:
-- I have done all 3 problems available to me from the assignment table, namely 2,16, and $23^{*}$, all of which succeeded on both the commercial solver and with my own implementation.
-- For your convenience, I've included a link to the Github repository that houses my code [[https://github.com/johnabs/IE535Project][here]], so I only need to submit the PDF and the report (since the assignment says not to submit a zip file, and I wasn't sure if there were any other submission requirements.) Please also note that all of my commits are signed by my GPG key so you can verify I wrote the code myself (you can check this on each invidival commit on the repository if you want).
-- Some lines of code needed to be split to prevent text from running of the page, as LaTeX doesn't allow for text wrapping of verbatim environments in a covenient way (that I'm aware of). So if you run the code below it will fail, for that reason I've included README.jl on the Github repository that you can run on julia version 1.8.3 (or later, but that's my current version).
-- I used JuMP with the HiGHS commercial solver for testing purposes (also available [[https://neos-server.org/neos/solvers/lp:HiGHS/LP.html][here]] from NEOS) (code available in section 5).
-- *For additional bonus consideration:* I decided to use rational numbers (instead of floats) for infinite precision to find exact extreme points and objective values, which made certain parts of my code more complicated and difficult to debug, but more accurate than the commerical solver.
-  - A consequence of this is that inaccuracies caused by inherent limitations of floating point arithmetic (even with arbitrarily large precision), are avoided by my algorithm, thus comparisons of objective values to the commercial solver must be done with the "isapprox" function with a tolerance vlaue(0.000000001), rather than strict equality.
-* Problem Formulations
-** Problem 2
-Code available in [[Problem 2 Code]]
+\begin{itemize}
+\item I have done all 3 problems available to me from the assignment table, namely 2,16, and \(23^{*}\), all of which succeeded on both the commercial solver and with my own implementation.
+\item For your convenience, I've included a link to the Github repository that houses my code \href{https://github.com/johnabs/IE535Project}{here}, so I only need to submit the PDF and the report (since the assignment says not to submit a zip file, and I wasn't sure if there were any other submission requirements.) Please also note that all of my commits are signed by my GPG key so you can verify I wrote the code myself (you can check this on each invidival commit on the repository if you want).
+\item Some lines of code needed to be split to prevent text from running of the page, as \LaTeX{} doesn't allow for text wrapping of verbatim environments in a covenient way (that I'm aware of). So if you run the code below it will fail, for that reason I've included README.jl on the Github repository that you can run on julia version 1.8.3 (or later, but that's my current version).
+\item I used JuMP with the HiGHS commercial solver for testing purposes (also available \href{https://neos-server.org/neos/solvers/lp:HiGHS/LP.html}{here} from NEOS) (code available in section 5).
+\item \textbf{For additional bonus consideration:} I decided to use rational numbers (instead of floats) for infinite precision to find exact extreme points and objective values, which made certain parts of my code more complicated and difficult to debug, but more accurate than the commerical solver.
+\begin{itemize}
+\item A consequence of this is that inaccuracies caused by inherent limitations of floating point arithmetic (even with arbitrarily large precision), are avoided by my algorithm, thus comparisons of objective values to the commercial solver must be done with the ``isapprox'' function with a tolerance vlaue(0.000000001), rather than strict equality.
+\end{itemize}
+\end{itemize}
+\section{Problem Formulations}
+\label{sec:org17a41fc}
+\subsection{Problem 2}
+\label{sec:org9d5c16c}
+Code available in \ref{sec:org528cab0}
 \begin{align*}
 &\min 35c + 30t + 25a\\
 &s.t.\\
@@ -37,8 +58,9 @@ Code available in [[Problem 2 Code]]
 &10c + 20t + 50a >= 150\\
 &c,t,a >= 0
 \end{align*}
-** Problem 16
-Code available in [[Problem 16 Code]]
+\subsection{Problem 16}
+\label{sec:org418163d}
+Code available in \ref{sec:org203be40}
 \begin{align*}
 & \max 385l_1 + 385l_2 + 385l_3 + 330m_1 +  330m_2 + 330m_3 + 275s_1+275s_2+275s_3\\
 & s.t.\\
@@ -59,9 +81,10 @@ Code available in [[Problem 16 Code]]
 \vfill
 Please continue to next page
 \newpage
-** Problem 23
-Code available in [[Problem 23 Code]]\\
-I wrote this in linear algebra form to keep it concise, otherwise this would have been much too large to even fit on the page. Note that constraints 1:8 represent the dot product of the constraint vector (in which all elements are divided by 100) and x, constraints 9 and 10 indicate that each element in x is greater than (or less than) the corresponding element in the vector (that is $x_1 \geq v_1$, that is $x1 \geq 4/100$). Also note that constraint 11 is meant to represent the sum of x being equal to 1. Finally, please note there was a redundant grouping constraint I left out of the formulation below (because x5 is in it's own group).
+\subsection{Problem 23}
+\label{sec:orgfe951c7}
+Code available in \ref{sec:org3cb218a}\\[0pt]
+I wrote this in linear algebra form to keep it concise, otherwise this would have been much too large to even fit on the page. Note that constraints 1:8 represent the dot product of the constraint vector (in which all elements are divided by 100) and x, constraints 9 and 10 indicate that each element in x is greater than (or less than) the corresponding element in the vector (that is \(x_1 \geq v_1\), that is \(x1 \geq 4/100\)). Also note that constraint 11 is meant to represent the sum of x being equal to 1. Finally, please note there was a redundant grouping constraint I left out of the formulation below (because x5 is in it's own group).
 \begin{align*}
 & \min [64,35,55,54,19,64,62,77,66,74,85,108,10,66]' x\\
 & s.t.\\
@@ -85,12 +108,13 @@ I wrote this in linear algebra form to keep it concise, otherwise this would hav
 
 With that, we'll move onto the code.
 
-* Simplex Method
+\section{Simplex Method}
+\label{sec:org2396421}
 For this section, each key function will be outlined in a subsection block, all necessary commentary takes the form of code comments.
 
-** Simplex
-#+ATTR_LATEX: :options julia
-#+begin_src julia :exports code :tangle yes
+\subsection{Simplex}
+\label{sec:org3b58084}
+\begin{minted}[,julia]{julia}
 # This runs both phases of the simplex method using the objective coefficients,
 # polyhedral set matrix, and right hand side to construct the tableau later in the process.
 # Note, we're storing results as successful or failure in each phase to make life easier
@@ -150,11 +174,11 @@ function simplex(A,b,c,type)
         return nothing
     end
 end
-#+end_src
+\end{minted}
 
-** Phase 1 to Phase 2
-#+ATTR_LATEX: :options julia
-#+begin_src julia :exports code :tangle yes
+\subsection{Phase 1 to Phase 2}
+\label{sec:org3190fe4}
+\begin{minted}[,julia]{julia}
 # This function takes us from the phase 1 tableau to the phase 2 tableau.
 function p1_to_p2(m1,c,a_inds,type)
         temp=find_basis_indices(m1)
@@ -186,10 +210,10 @@ function p1_to_p2(m1,c,a_inds,type)
         #display(mat)
         return(mat)
 end
-#+end_src
-** Find Pivot
-#+ATTR_LATEX: :options julia
-#+begin_src julia :exports code :tangle yes
+\end{minted}
+\subsection{Find Pivot}
+\label{sec:orgde463bc}
+\begin{minted}[,julia]{julia}
 # The following 3 functions are helper functions I needed to write
 # to deal with 0/0=NaN in julia but 0//0 (the rational version)
 # Find the smallest value strictly greater than 0 and not equal to infinity.
@@ -256,11 +280,11 @@ function find_pivot(mat)
     # variables, which I leverage here when this function is called in the pivot function.
     return ([prow,pcol])
 end
-#+end_src
+\end{minted}
 
-** Unboundedness Check
-#+ATTR_LATEX: :options julia
-#+begin_src julia :exports code :tangle yes
+\subsection{Unboundedness Check}
+\label{sec:orgde0c83d}
+\begin{minted}[,julia]{julia}
 # This finds basis indices based on columns that look like the identity matrix
 # and that have a 0 in the reduced cost row, which makes things more accurate.
 function find_basis_indices(mat)
@@ -307,11 +331,11 @@ function feasibility_check(mat)
     # column or invalid pivot, we are still feasible.
     return([true,nothing])
 end
-#+end_src
+\end{minted}
 
-** Pivot
-#+ATTR_LATEX: :options julia
-#+begin_src julia :exports code :tangle yes
+\subsection{Pivot}
+\label{sec:org341b0f6}
+\begin{minted}[,julia]{julia}
 # This function pivots until it can't pivot anymore, either due to infeasibility
 # or due to finding an optimal tableau (depending on the phase) then returns the
 # modified tableau.
@@ -369,11 +393,11 @@ function pivot(mat)
         return temp[2]
     end
 end
-#+end_src
+\end{minted}
 
-** Phase 1
-#+ATTR_LATEX: :options julia
-#+begin_src julia :exports code :tangle yes
+\subsection{Phase 1}
+\label{sec:org15017a0}
+\begin{minted}[,julia]{julia}
 # Create an identity matrix, and append it to the matrix rows to force
 # full row rank, and a basis for phase 1 of the method. Note, I'm not
 # adding artificial variables indiscriminately, but only as many as needed
@@ -478,7 +502,7 @@ function phase1(A,b,c;debug=false)
     # recompute any necessary values for our tableau.
     if(length(temp2)>0)
         output="Problem contains redundant constraints, namely row(s) "
-        ,*join(string.(temp2),", ")*". Redundant constraints will be removed.\n"
+        *join(string.(temp2),", ")*". Redundant constraints will be removed.\n"
         printstyled(output,color=:blue)
         res=res[1:end .!=temp2,:]
         #display(res)
@@ -499,9 +523,10 @@ function phase1(A,b,c;debug=false)
          all reduced costs are negative and the sum of artificial variables is nonzero"])
     end
 end
-#+end_src
+\end{minted}
 
-* Unit Testing and Correctness Proofs
+\section{Unit Testing and Correctness Proofs}
+\label{sec:org829ea81}
 All of the following code screenshots were examples to validate the behavior required in the project prompt: namely to detect feasibility via phase 1, to detect redundancy via phase 1 and remove redundant constraints, and to handle both optimal and unbounded terminations and return either the optimal objective value or a recession direction of the LP. Please note, I was informed by professor Liu not to include anything in my output other than the current basic feasible solution and the objective value, but there are commented out statements which display the whole tableau at every iteration in both phases as well.
 \begin{center}
 \includegraphics[width=1\textwidth]{figure1.png}\\
@@ -525,70 +550,16 @@ Test 3 for optimal solution $\uparrow$\\
 \includegraphics[width=\textwidth]{figure7.png}\\
 Test 2 for infeasibility $\uparrow$
 \end{center}
-#+ATTR_LATEX: :options julia :
-#+begin_src julia :exports none :tangle yes
-# Load necessary libraries
-using HiGHS, JuMP, LinearAlgebra, DelimitedFiles
-
-# Book Comparison Examples:
-# Problem 3.28
-A=[2 -3 -1 1 1 0 0 ; -1 2 2 -3 0 1 0 ; -1 1 -4 1 0 0 1]
-b=[0,1,8]
-c=[-3,2,-1,1,0,0,0]
-simplex(A,b,c,"max")
-# Result: recession direction exists and identified, confirmed positive by cd>0.
-
-# Example 3.7, page 118.
-A=[1 -2 1 0 ; -1 1 0 1]
-b=[4,3]
-c=[-1,-3,0,0]
-simplex(A,b,c,"min")
-# Result: recession direction exists and identified, confirmed negative by cd<0.
-
-# Example 4.1, page 156.
-A=[1 1 -1 0; -1 1 0 -1 ; 0 1 0 0]
-b=[2,1,3]
-c=[1,-2,0,0]
-simplex(A,b,c,"min")
-# Result: -6, which agrees with the book
-
-# Example 4.4, page 158.
-A=[1 1 1 0 ; 2 3 0 -1]
-b=[4,18]
-c=[1 1 1 0]
-simplex(A,b,c,"min")
-# Result: problem is infeasible, same as the book.
-
-# Example 4.5, page 162.
-A=[1 1 1 0 ; -1 1 2 0 ; 0 2 3 0 ; 0 0 1 1]
-b=[6,4,10,2]
-c=[-1,2,-3,0]
-simplex(A,b,c,"min")
-# Correctly identifies redundant constraint and remove it, proceeds to solve
-# with optimal objective value of -4
-
-# Example 4.6, page 166.
-A=[1 1 -1 0 0; -1 1 0 -1 0 ; 0 1 0 0 1]
-b=[2,1,3]
-c=[1,-2,0,0,0]
-simplex(A,b,c,"min");
-# Correctly solves with optimal objective value of -6
-
-# Example 4.7, page 170.
-A=[1 1 2 1 0 0 ; -1 0 1 0 -1 0 ; 0 0 1 0 0 -1]
-b=[4,4,3]
-c=[-1,-3,1,0,0,0]
-simplex(A,b,c,"min")
-# Correctly identifies as infeasible.
-#+end_src
-
-* Performance Evaluation
-** Problem 2 Code
-*** Problem Formulation
-See formulation above in the introduction [[Problem 2]].
-*** Code
-#+ATTR_LATEX: :options julia
-#+begin_src julia :exports code :tangle yes
+\section{Performance Evaluation}
+\label{sec:org26e9204}
+\subsection{Problem 2 Code}
+\label{sec:org528cab0}
+\subsubsection{Problem Formulation}
+\label{sec:org761ff96}
+See formulation above in the introduction \ref{sec:org9d5c16c}.
+\subsubsection{Code}
+\label{sec:org50415e9}
+\begin{minted}[,julia]{julia}
 # Comparison with commercial solvers:
 
 #Initialize Model 2
@@ -624,9 +595,10 @@ else
         printstyled("Failure: My algorithm disagrees with HiGHS.)",color=:red)
 end
 
-#+end_src
+\end{minted}
 
-*** Screenshots of Evaluation and Results
+\subsubsection{Screenshots of Evaluation and Results}
+\label{sec:orga6cab65}
 
 \begin{center}
 \includegraphics[width=1\textwidth]{figure8.png}\\
@@ -637,11 +609,11 @@ Comparison of my solver with JuMP+HiGHS for problem 2 which also includes my tes
 Please continue to next page
 \newpage
 
-** Problem 16 Code
-See formulation above in the introduction [[Problem 16]].
+\subsection{Problem 16 Code}
+\label{sec:org203be40}
+See formulation above in the introduction \ref{sec:org418163d}.
 
-#+ATTR_LATEX: :options julia
-#+begin_src julia :exports code :tangle yes
+\begin{minted}[,julia]{julia}
 #Initialize Model 16
 
 # Note, these constructions look strange due to the
@@ -692,9 +664,10 @@ elseif(res==nothing)
 else
         printstyled("Failure: mine doesn't agree with HiGHS.",color=:red)
 end
-#+end_src
+\end{minted}
 
-*** Screenshots of Evaluation and Results
+\subsubsection{Screenshots of Evaluation and Results}
+\label{sec:orgd3c49cc}
 \begin{center}
 \includegraphics[width=1\textwidth]{figure9.png}\\
 Comparison of my solver with JuMP+HiGHS for problem 16 which also includes my testing code to compare the outputs. Note that the bottom line of the right panel in the screenshot indicates my model agrees with HiGHS. Apologies for the large volume of output, but this one shows that the complete tabluea in phase 1 was completed, all the way to the end of phase 2.
@@ -705,10 +678,10 @@ Comparison of my solver with JuMP+HiGHS for problem 16 which also includes my te
 Please continue to next page
 \newpage
 
-** Problem 23 Code
-See formulation above in [[Problem 23]].
-#+ATTR_LATEX: :options julia
-#+begin_src julia :exports code :tangle yes
+\subsection{Problem 23 Code}
+\label{sec:org3cb218a}
+See formulation above in \ref{sec:orgfe951c7}.
+\begin{minted}[,julia]{julia}
 #Initialize Model 23
 model=Model(HiGHS.Optimizer)
 set_optimizer_attribute(model, "presolve", "off")
@@ -780,10 +753,12 @@ elseif(res==nothing)
 else
         printstyled("Failure: mine doesn't agree with HiGHS.",color=:red)
 end
-#+end_src
+\end{minted}
 
-*** Screenshots of Evaluation and Results
+\subsubsection{Screenshots of Evaluation and Results}
+\label{sec:org13dabec}
 \begin{center}
 \includegraphics[width=1\textwidth]{figure10.png}\\
 Comparison of my solver with JuMP+HiGHS for problem $23^{*}$ which also includes my testing code to compare the outputs. Note that the bottom line of the right panel in the screenshot indicates my model agrees with HiGHS. Apologies for even more output, but this problem was massive which made the BFS solutions quite long. This screenshot only shows that the last pivot of phase 1 resulted in a feasible tableau, and then all of phase 2's outputs were recorded as well.
 \end{center}
+\end{document}

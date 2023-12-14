@@ -1,39 +1,49 @@
-
-# simplex::
 # This runs both phases of the simplex method using the objective coefficients,
 # polyhedral set matrix, and right hand side to construct the tableau later in the process.
 # Note, we're storing results as successful or failure in each phase to make life easier
-# in this simplex function as the booleans are already computed in the phase 1 and 2 stages for feasibility.
+# in this simplex function as the booleans are already computed in the phase 1 and 2
+# stages for feasibility.
 function simplex(A,b,c,type)
-# First run phase 1; if it returns true then proceed to phase 2:
-# otherwise, we're done.
-    # If b is positive and we have an identity, we skip phase 1 since we know we have at least 1 BFS.
-    # Check if we already have a BFS; if so, we don't need phase 1.
+    # Negate cost vector if we're maximizing.
     obj=c
     if(type=="max")
         c= -1 .* c
     end
+# First run phase 1; if it returns true then proceed to phase 2:
+# otherwise, we're done.
     res=phase1(A,b,c)
-    # Finally we recompute any reduced costs that are needed to pass this
-    # tableau to phase 2.
+    # If phase 1 returns true (meaning the problem is feasible)
+    # proceed  to phase 2.
     if(res[1])
+        # Index into the second half of res to assign my variables
         mat,a_inds,old_c,new_b=res[2]
-        # Pivot handles recession directions if needed, and returns an
-        # error if it occurs, so this is phase2.
+        # Use new variables from Phase 1 to create the Phase 2
+        # tableau.
         mat=p1_to_p2(mat,old_c,a_inds,type)
         printstyled("Beginning pivoting for Phase 2:\n",color=:blue)
+        # Pivot handles recession directions if needed, and returns an
+        # error if it occurs, so this is phase2.
         res2=pivot(mat)
     else
+        # If Phase 1 failed, we print the error-message in red text.
+        # This error would be that the problem is infeasible
+        # due to all negative reduced costs but nonzero
+        # RHS for the phase 1 problem.
         printstyled(res[2]*".\n",color=:red,bold=true)
         return nothing
     end
     # If our phase 2 had a recession direction, it returns a string.
     # So if it's not a string, we know it's optimal.
     if(typeof(res2)!=String && res2!=nothing)
-        display(res2)
+        #display(res2)
+        # We find our basis indices to construct our
+        # optimal basic feasible solution.
         temp=find_basis_indices(res2)
         optimal_bfs=Rational.(zeros(size(res2,2)-1))
         optimal_bfs[temp]=(res2[2:end,end])
+        # Pretty print results and objective value
+        # and return the optimal tableau, bfs, and
+        # objective value.
         printstyled("Problem is solved.\n",color=:green)
         printstyled("The optimal solution is ", color=:green)
         printstyled("["*join(string.(optimal_bfs),", ")*"],\n",color=:cyan)
@@ -48,51 +58,41 @@ function simplex(A,b,c,type)
     end
 end
 
-
 # This function takes us from the phase 1 tableau to the phase 2 tableau.
 function p1_to_p2(m1,c,a_inds,type)
         temp=find_basis_indices(m1)
-        println(temp)
-        println(a_inds)
-        # Check if any artifical variables are in the basis
-        if(any(a_inds .∈ [temp,] ))
-            println("ARTIFICIALS IN THE BASIS!!!")
-        # If not, just delete them and adjust the tableau accordingly:
-        else
-            #display(m1)
-            kinds= (1:size(m1,2))[(1:size(m1,2) .∉ [a_inds,])]
-            println("KINDS")
-            #display(m1[:,kinds])
-            mat=m1[:,kinds]
-            println("MAT")
-            printstyled("Removed artificial varibles:\n",color=:blue,blink=false)
-            display(mat)
-            mat[1,1:end-1]=(-1 .* c)
-            println("MAT2")
-            mat[1,end]=0
-            println("ZEROED")
-            printstyled("Adjusted reduced cost row:\n",color=:blue,blink=false)
-            display(mat)
-
-            for i in 1:(size(mat,2))-1
-                if i ∈ temp && mat[1,i]!=0
-                    t=findfirst(x->x!=0,mat[2:end,i])+1
-                    row=deepcopy(mat[t,:])
-                    scalar=(-1*mat[1,i])/mat[t,i]
-                    #mat[1,:]= mat[1,:]+(((mat[i,1]>0 && scalar>0) || (mat[i,1]<0 && scalar<0)) ? -1 .* (row*scalar) : row*scalar)
-                    mat[1,:]= mat[1,:]+row*scalar
-                end
+        # Find indices that aren't artificial and keep them
+        # while discarding the rest.
+        kinds= (1:size(m1,2))[(1:size(m1,2) .∉ [a_inds,])]
+        mat=m1[:,kinds]
+        printstyled("Removed artificial varibles:\n",color=:blue,blink=false)
+        #display(mat)
+        # Set reduced costs to negative of our cost vector.
+        mat[1,1:end-1]=(-1 .* c)
+        mat[1,end]=0
+        printstyled("Adjusted reduced cost row:\n",color=:blue,blink=false)
+        #display(mat)
+        # Elementary row operations to make sure
+        # our basis columns are 0 before moving to phase 2.
+        for i in 1:(size(mat,2))-1
+            if i ∈ temp && mat[1,i]!=0
+                t=findfirst(x->x!=0,mat[2:end,i])+1
+                row=deepcopy(mat[t,:])
+                scalar=(-1*mat[1,i])/mat[t,i]
+                mat[1,:]= mat[1,:]+row*scalar
             end
-            printstyled("Recomputed reduced cost row\n",color=:blue,blink=false)
-
         end
-        # Pretty print the intermediate matrices after each pivot.
+        printstyled("Recomputed reduced cost row\n",color=:blue,blink=false)
+
+        # Pretty print the tableau before starting phase 2
         printstyled("Reconstructed tableau for phase 2 is:\n",color=:blue)
-        display(mat)
+        #display(mat)
         return(mat)
 end
 
-# Find the smallest value strictly greater than 0 and less than infinity.
+# The following 3 functions are helper functions I needed to write
+# to deal with 0/0=NaN in julia but 0//0 (the rational version)
+# Find the smallest value strictly greater than 0 and not equal to infinity.
 function pos_min(x)
     if(length(filter(x->x>=0 && x!=Inf,x))==0)
         return nothing
@@ -100,7 +100,6 @@ function pos_min(x)
         return minimum(filter(x->x>=0 && x!=Inf,x))
     end
 end
-
 # Find the ties of any positive minima.
 function tie_min(y)
     if(pos_min(y)==nothing)
@@ -109,7 +108,6 @@ function tie_min(y)
        return findall(x->x==pos_min(y),y)
     end
 end
-
 # Find any matches in the ratio test where integer division would fail:
 # namely 0//0 (0/0 in Floating point arithmetic is handled as NaN, but fails
 # with integer division so I have to handle it separately).
@@ -120,25 +118,14 @@ function match_zeros(z,y)
          return false
     end
 end
-
-#Deal with all funky zeros and NaNs
-function match_zeros(z,y)
-     if any(findall(x->x==0,z).∈ [findall(x->x==0,y),])
-         return z.==0 .&& y.==z
-    else
-         return false
-    end
-end
-
-# pivot:: Matrix{Rational} => a -> a | a::Matrix{Rational}
-# This finds the pivot based on Bland's rule: namely,
-# find the first positive reduced cost to enter the basis,
+# This finds the pivot based on Bland's rule to prevent cycling:
+# namely, find the first positive reduced cost to enter the basis,
 # then the first index of any ties for the smallest positive ratio to leave.
 function find_pivot(mat)
     # Find the first positive reduced cost value
     pcol=findfirst(x->x>0,mat[1,1:end-1])
-    # Compute all the ratios
-    # account for issues with possible undefined integer division with 0//0.
+
+    # Account for issues with possible undefined integer division with 0//0.
     # 0/0 is normally NaN, but intger division breaks with this so it had
     # to be handled separately 1//0, -1//0, and 0//1 are all handled normally.
     temp=match_zeros(mat[2:end,end], mat[2:end,pcol])
@@ -146,19 +133,27 @@ function find_pivot(mat)
         finds=(2:size(mat,1))[temp]
         rinds=(2:size(mat,1))[.!(temp)]
         ratio=zeros(size(mat,1)-1)
+        # Compute ratios after dealing with dangerous
+        # indicies.
         ratio[rinds.-1]=mat[rinds,end]./mat[rinds,pcol]
         ratio[finds.-1].=Inf
+        # Deals with negative values in the chosen pivot column
+        # in the event the corrsponding B^{-1}b is 0.
         ratio[findall(x->x<0,mat[2:end,pcol])].=Inf
     else
         # If there are no 0//0 errors, just compute ratios normally
         rinds=2:size(mat,1)
         ratio=mat[rinds,end]./mat[rinds,pcol]
+        # Deals with negative values in the chosen pivot column
+        # in the event the corrsponding B^{-1}b is 0.
         ratio[findall(x->x<0,mat[2:end,pcol])].=Inf
     end
     # Find the first index of the minimum ratios including ties.
+    # Add 1 to the result since I'm operating on the 2:m rows of
+    # the tableau, but need to index into the whole thing.
     prow=tie_min(ratio)[1]+1
-    # Julia allows me to return a vector and assign to two separate variables, which I leverage
-    # here when this function is called in the pivot function.
+    # Julia allows me to return a vector and assign to two separate
+    # variables, which I leverage here when this function is called in the pivot function.
     return ([prow,pcol])
 end
 
@@ -167,7 +162,6 @@ end
 function find_basis_indices(mat)
     return(map(x->findfirst(y->y==vcat(0,I(size(mat,1)-1)[:,x]),eachcol(mat[:,1:end-1])),1:size(mat,1)-1))
 end
-
 # This finds basis indices based on columns that look like the identity matrix;
 # however, since we don't have a reduced cost row, it defaults to the last most
 # columns instead of the first, to prioritize artificial variables that are
@@ -175,83 +169,89 @@ end
 function find_basis_indices_start(mat)
     return(map(x->findlast(y->y==I(size(mat,1))[:,x],eachcol(mat)),1:size(mat,1)))
 end
-
-# feasibility_check:: [Matrix{Rational}] => b | a::Matrix{Rational}, b::Boolean
+# This takes a tableau and determines if a recession direction exists,
+# and if so, returns false but pretty prints the direction.
+# Note, I should have called this unboundedness check, but due to code revisions
+# the function evolved but the name stayed the same
 function feasibility_check(mat)
     # xi is the index of the first column that has a positive reduced cost,
     # but entirely negative entires elsewhere, excluding the right-hand-side column.
     # This indicates an unbounded problem.
     xi=findfirst(x-> x[1]>0 && all(x[2:end].<=0), eachcol(mat[1:end,1:end-1]))
-    if(xi != nothing )#|| find_pivot(mat)==false)
-        # If the problem is infeasible, we construct our basic feasible solution and recession direction.
-        # The basic-feasible-indices are computed by matching to the identity matrix
-        # the solution is then constructed by extracting the right hand side from the tableau for the
-        # variable, and the recession direction is constructed by negating the all negative column
-        # and making everything else 0, except the element that corresponds to the all negative column
-        # which becomes a 1.
-        bfi=map(x->findfirst(y->y==I(size(mat,1)-1)[:,x],eachcol(mat[2:end,1:end-1])),1:size(mat,1)-1)
-        bfs=map(x-> in(x, bfi) ? mat[2:end,:][findfirst(y->y==x,bfi),end] : 0//1, 1:size(mat,2)-1)
-        rd=map(x-> in(x, bfi) ? -1 .* mat[2:end,xi][findfirst(y->y==x,bfi),end] : 0//1, 1:length(bfs))
+    if(xi != nothing )
+        # If the problem is unbounded, construct our basic feasible solution
+        # and recession direction. The basic-feasible-indices are computed by
+        # matching to the identity matrix
+        bfi=map(x->findfirst(y->y==I(size(mat,1)-1)[:,x]
+                             ,eachcol(mat[2:end,1:end-1])),1:size(mat,1)-1)
+        # the solution is then constructed by
+        # extracting the right hand side from the tableau for the variable,
+        bfs=map(x-> in(x, bfi) ? mat[2:end,:][findfirst(y->y==x,bfi),end]
+                : 0//1, 1:size(mat,2)-1)
+        # and the recession direction is constructed by negating the all negative column
+        # and making everything else 0, except the element that corresponds to the all
+        # negative column which becomes a 1.
+        rd=map(x-> in(x, bfi) ? -1 .* mat[2:end,xi][findfirst(y->y==x,bfi),end]
+               : 0//1, 1:length(bfs))
         rd[xi]=1//1
-        err_msg="Problem is unbounded, the recession direction in order (i.e. x1->xn) is \n"* string(bfs)*" +x_"*string(xi)*"*"*string(rd)
+        errmsg1="Problem is unbounded, the recession direction in order (i.e. x1->xn) is \n"
+        err_msg= errmsg1 * string(bfs)*" +x_"*string(xi)*"*"*string(rd)
         return([false,err_msg])
     end
-    # If we can't find a positive reduced cost with negative column or invalid pivot, we are still feasible.
+    # If we can't find a positive reduced cost with negative
+    # column or invalid pivot, we are still feasible.
     return([true,nothing])
 end
 
-
-# pivot:: [Matrix{Rational},Vector{Vector{Int}}] => [a,b] -> [a,b] | a::Matrix{Rational}, b::Vector{Vector{Int}}
-# First this function uses the find_pivot function to find our pivot index by one of the non-looping rules,
-# then uses pivots the matrix, returning the modified matrix with the new basis.
+# This function pivots until it can't pivot anymore, either due to infeasibility
+# or due to finding an optimal tableau (depending on the phase) then returns the
+# modified tableau.
 function pivot(mat)
-    # While any of the reduced costs (not including the right hand side) are greater than 0, keep
-    # pivoting.
+    # Make sure everything is rational.
     mat=Rational.(mat)
-    count=0
+    # While any of the reduced costs (not including the right hand side)
+    # are greater than 0, keep pivoting.
     while (any(mat[1,1:end-1].>0) && feasibility_check(mat)[1])
-        #if(phase[1]==1)
-        #    if(any(phase[2] .∈ [find_basis_indices(mat),]) && count<length(phase[2]))
-        #        prow,pcol=find_pivot_artificial(mat,phase[2])
-        #        count=count+1
-        #    else
-        #        prow,pcol=find_pivot(mat)
-        #    end
-        #else
         prow,pcol=find_pivot(mat)
-        #end
-        #if(ind!=[])
-        #    prow,pcol=ind
-        #end
-        #println("Our pivot index for this is row "*string(prow)*" and column "*string(pcol)*".")
-        # Go ahead and normalize our pivot row by the pivot index, it makes it easier to compute the
-        # the scalar needed for the elementary row operations in the upcoming loop also assign it
+        # Go ahead and normalize our pivot row by the pivot index, it
+        # makes it easier to compute the the scalar needed for the
+        # elementary row operations in the upcoming loop also assign it
         # to a variable to save on indexing operations.
         mat[prow,:]=mat[prow,:]./mat[prow,pcol]
-        #println("test1")
+
         # Assign to placeholder for cleaner code below
         row=mat[prow,:]
-        #println("row is "*string(row))
-        # Placeholder for pivoted matrix
+        # Placeholder for newly pivoted matrix
         sol=[]
-        # Iterate over each row, do elementary row operations if we're not on the already re-scaled pivot row.
+        # Iterate over each row, do elementary row operations if
+        # we're not on the already re-scaled pivot row.
         # Add all results to the solutions vector.
         for i in collect(eachrow(mat))
             if i == row
                 push!(sol, row)
             else
                 scalar=i[pcol]
-                #push!(sol, ((i[pcol]>0 && scalar>0) || (i[pcol]<0 && scalar<0)) ? i-row*scalar : i+row*scalar)
                 push!(sol,  i-row*scalar )
             end
         end
-        # Reconstruct the matrix from the solutions vector via hcat and transposing (vectors in julia
-        # are column vectors by default, hence the need to transpose).
+        # Reconstruct the matrix from the solutions vector via hcat and
+        # transposing (vectors in julia are column vectors by default,
+        # hence the need to transpose).
         mat=Matrix(reduce(hcat,sol)')
-        # Pretty print the intermediate matrices after each pivot.
+        # Pretty print the current basic feasible solution and the current objective value
+        # Note: for maximization problems this objective value may be negative, but
+        # this is corrected in the simplex function before the code terminates.
+        bfi=map(x->findfirst(y->y==I(size(mat,1)-1)[:,x],
+                             eachcol(mat[2:end,1:end-1])),1:size(mat,1)-1)
+        bfs=map(x-> in(x, bfi) ? mat[2:end,:][findfirst(y->y==x,bfi),end]
+                : 0//1, 1:size(mat,2)-1)
+        printstyled("The current BFS is: "* string(bfs)*".\n",color=:blue)
+        printstyled("The current objective value is: "* string(mat[1,end])*".\n",color=:magenta)
     end
-    display(mat)
-    # Once we're done pivoting, return the result.
+    # After all the pivoting is done, display the new tableau.
+    #display(mat)
+    # Once we're done pivoting, return the result either if it's feasible
+    # or if it's done/optimal.
     temp=feasibility_check(mat)
     if(temp[1])
         return(mat)
@@ -260,42 +260,50 @@ function pivot(mat)
     end
 end
 
-# add_artificial_variables:: Matrix{Rational} => a -> a | a::Matrix{Rational}
 # Create an identity matrix, and append it to the matrix rows to force
-# full row rank, and a basis for phase 1 of the method. Note, we're just
-# adding artificial variables indiscriminately, not considering any
-# potential bases in the original problem. This helps detect redundant
-# constraints.
+# full row rank, and a basis for phase 1 of the method. Note, I'm not
+# adding artificial variables indiscriminately, but only as many as needed
+# to form a complete basis. If a complete basis is present, I only add
+# one artificial variable. This helps detect redundant constraints.
+# even if I know the problem is feasible (starting at a BFS).
 function add_artificial_vars(mat)
     res=find_basis_indices_start(mat)
-    #println(res)
+    # Check if any identitiy columns are missing from the
+    # tableau. If not, add one artificial variable.
     if(nothing ∉ res)
         lc=mat[:,end]
         mat=mat[:,1:end-1]
         return([hcat(mat,I(size(mat,1))[:,1],lc), [size(mat,2)+1]])
+    # If so, selectively add artificial variables to "plug" the
+    # holes in the identity matrix.
     else
-        #println("else")
+        # Split the tableau into A, b
         lc=mat[:,end]
         mat=mat[:,1:end-1]
         num=length(findall(x->x==nothing, res))
+        # Keep track of artificial variable indices
         inds=[]
+        # Add missing identity columns
        for i in findall(x->x==nothing, res)
-           #println(i)
            t=Rational.(I(size(mat,1)))[:,i]
-           #println(t)
            mat=hcat(mat,t)
            push!(inds,size(mat,2))
         end
+        # Re-concatenate b to the right side of A
         mat=hcat(mat,lc)
     end
+        # Return tableau and artificial indicies tracker.
         return([mat,inds])
 end
 
-# phase1 :: Matrix{Rational} => a -> [a,b,s] | a::Matrix{Rational}, b::Boolean, s:Message
-# Phase one of the two-phase simplex:
+# Phase one of the two-phase simplex.
+# We use add_artificial_vars, find_basis_indices_start
+# find_basis_indices, and pivot here.
 function phase1(A,b,c;debug=false)
     # First add as many artificial variables as needed (the number of rows in A to guarantee full row rank), and note how many.
     printstyled("Beginning Phase 1:\n",color=:blue)
+    # Check if any b are < 0 if so, negate the whole row
+    # in the tableau.
     if(any(b.< 0))
         ind=findall(x->x<0,b)
         b[ind]=b[ind] .* -1
@@ -305,56 +313,40 @@ function phase1(A,b,c;debug=false)
 
     m2,a_inds=add_artificial_vars(mat);
     printstyled("Tableau with added artificial variables and constraints created:\n",color=:blue)
-    display(m2)
-    println(a_inds)
+    #display(m2)
 
-    #
+    # Keep track of original objective value since we're about to
+    # leave it behind temporarily
     old_c=Rational.(c)
     c=Rational.(zeros(size(m2,2)))
-    #println("Test1")
-    #println(a_inds)
     c[a_inds].=1//1
 
-
-    # Next, get the indices of these artificial variables that will act as a basis,
-    # and the non-basis variables.
-    #println("Test2")
+    # Next, get the indices of these artificial variables that will act as
+    # a part of the basis, and the reduced costs for all non-artificial
+    # rows is set to 0, and for artificial are set to -1.
     r0=Rational.(zeros(size(m2,2)))'
-    #display(r0)
     r0[a_inds].=-1
-    #display(r0)
+    # Now do elementary row operations on the reduced costs
+    # to make sure our basic variables have reduced cost of 0.
     rinds=map(x->findfirst(y->y==1,m2[:,x]),a_inds)
-    #display(rinds)
-    #display(m2[rinds,:])
-    #display(sum(m2[rinds,:],dims=1))
     r0=r0.+sum(m2[rinds,:],dims=1)
-    #display(r0)
-    #r0[n_ind]=Rational.(c[b_ind]'*m2[:,n_ind]-c[n_ind]')
-    #r0[end]=c[b_ind]'*b
     m2=vcat(r0,m2)
     printstyled("Complete tableau with reduced costs created:\n",color=:blue)
-    display(m2)
+    #display(m2)
 
-
-    # Compute the objective function row for the matrix based on the new problem,
-    # namely, minimizing the sum of the artificial variables
-    #z=hcat(ones(num_art)'*I(num_art)*m2[:,n_ind],zeros(num_art)')
-    #z=Matrix(vcat(zeros(n_ind[end]),zeros(b_ind[end]) .- 1,0)')+sum(m2,dim=1)
-    #rhs=[]
-    #m2=vcat(z,m2)
-    #m2=hcat(m2,rhs)
-    #cb=[b_ind]
-
-    # The pivot function has checks for termination and is a fixed point function
-    # when the result of the last iteration is the same is the current iteration,
-    # we know we're done pivoting.
+    # Now we pivot, see above for more details.
     printstyled("Beginning Phase 1 pivoting:\n",color=:blue)
     res=pivot(m2)
+
+    # If debugging mode is on, save the result of the phase 1 pivots.
+    # otherwise, keep going
     if(debug)
         return res
     end
 
     # Check if we have a recession direction here.
+    # If so, return false and the error message
+    # from our pivoting.
     if(typeof(res)==String)
         return([false, res])
     end
@@ -370,16 +362,15 @@ function phase1(A,b,c;debug=false)
         output="Problem contains redundant constraints, namely row(s) "*join(string.(temp2),", ")*". Redundant constraints will be removed.\n"
         printstyled(output,color=:blue)
         res=res[1:end .!=temp2,:]
-        display(res)
+        #display(res)
         new_b=find_basis_indices(res)
         new_n=filter(x->x ∉ new_b && x ∉ a_inds, 1:size(m2,2)-1)
         res[1,new_n]=old_c[new_b]'*res[2:end,new_n]-old_c[new_n]
     end
     new_b=find_basis_indices(res)
-    #display(res)
 
     # If there is no recession direction, and all our reduced costs are negative,
-    # we have an optimal tableau, from here, we need to determine
+    # and cx=0, we have an optimal tableau, from here, we need to determine
     # if the right hand side is 0. If not, phase 1 has concluded, and the
     # original problem is infeasible.
     if(res[1,end]==0//1 && all(res[1,a_inds].<=0))
@@ -390,11 +381,10 @@ function phase1(A,b,c;debug=false)
     end
 end
 
-
+# Load necessary libraries
+using HiGHS, JuMP, LinearAlgebra, DelimitedFiles
 
 # Book Comparison Examples:
-using HiGHS, JuMP, Test, LinearAlgebra, DataStructures
-
 # Problem 3.28
 A=[2 -3 -1 1 1 0 0 ; -1 2 2 -3 0 1 0 ; -1 1 -4 1 0 0 1]
 b=[0,1,8]
@@ -480,6 +470,12 @@ else
 end
 
 #Initialize Model 16
+
+# Note, these constructions look strange due to the
+# fraction -> float -> rational conversion
+# normally my code handles everything well
+# but occasionally I had to do this due to Julia's
+# limitations.
 A=vcat(Rational.(
  [1 0 0 1 0 0 1 0 0 1 0 0 0 0 0 0 0 0;
    0 1 0 0 1 0 0 1 0 0 1 0 0 0 0 0 0 0;
@@ -506,6 +502,7 @@ set_optimizer_attribute(model, "presolve", "off")
 @objective(model, Max, c'*x);
 # Optimize the model
 optimize!(model)
+#Run my simplex algorithm
 res=simplex(A,b,c,"max");
 if(raw_status(model) == "kHighsModelStatusOptimal")
     # Check if my model is sufficiently close to the HiGHS optimizer
@@ -521,8 +518,6 @@ elseif(res==nothing)
 else
         printstyled("Failure: mine doesn't agree with HiGHS.",color=:red)
 end
-
-
 
 #Initialize Model 23
 model=Model(HiGHS.Optimizer)
@@ -545,17 +540,35 @@ set_optimizer_attribute(model, "presolve", "off")
 @objective(model, Min, [64,35,55,54,19,64,62,77,66,74,85,108,10,66]'*x);
 # Optimize the model
 optimize!(model)
-# I put my model into some external code to help formulate the matrices
-# due to a series of typos making my life miserable since this matrix is so huge.
-# BUT IT DOES WORK. The matrix of interest is in the test2.csv file, which contains
-# A and b.
-c=vcat(Rational.([64,35,55,54,19,64,62,77,66,74,85,108,10,66]),Rational.(zeros(60-14)))
+obj=objective_value(model)
+
+# This problem was so large and cumbersome I had to write the values for A and b
+# in a csv file to make sure I wasn't getting any typos. I knew the mistake was with
+# my model and not the code because I was able to test the constraint matrices
+# in HiGHS as well which got the same (wrong) result as my model. Hence why
+# I'm importing them from a CSV.
 A=readdlm("test2.csv", ',', String)
 A=Meta.parse.(A)
 A=eval.(A)
 A=Rational.(A)
 b=A[:,end]
 A=A[:,1:end-1]
+c=vcat(Rational.([64,35,55,54,19,64,62,77,66,74,85,108,10,66]),Rational.(zeros(60-14)))
+
+# Sanity check
+model=Model(HiGHS.Optimizer)
+set_optimizer_attribute(model, "presolve", "off")
+@variable(model, x[1:60]);
+# Add constraints (in  this case simple matrix based ones)
+# Note for problem 1 I need to double check I didn't transpose the A matrix incorrectly.
+@constraint(model, A*x .== b );
+@constraint(model, x .>= 0 );
+# Define the objective function
+@objective(model, Min, c'*x);
+# Optimize the model
+optimize!(model)
+println("Original model and the matrix form perform the same?",obj==objective_value(model))
+#Run my simplex algorithm
 res=simplex(A,b,c,"min");
 if(raw_status(model) == "kHighsModelStatusOptimal")
     # Check if my model is sufficiently close to the HiGHS optimizer
